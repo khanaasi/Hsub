@@ -1,58 +1,226 @@
+import os
+import asyncio
+from pyrogram import Client
+import subprocess
 
-name: Video Encoder Worker
+# ================= ENV VARIABLES =================
 
-on:
-  workflow_dispatch:
-    inputs:
-      task_type:
-        description: 'resize or hsub'
-        required: true
-      video_id:
-        required: true
-      sub_id:
-        required: false
-      wm_id:
-        required: false
-      wm_pos:
-        required: false
-      chat_id:
-        required: true
-      target_res:
-        required: false
-      rename_text:
-        required: false
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-jobs:
-  encode:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+TASK_TYPE = os.getenv("TASK_TYPE")
 
-      - name: Install FFmpeg
-        run: |
-          sudo apt update
-          sudo apt install ffmpeg -y
+VIDEO_ID = os.getenv("VIDEO_ID")
+SUB_ID = os.getenv("SUB_ID")
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+WM_ID = os.getenv("WM_ID")
+WM_POS = os.getenv("WM_POS")
 
-      - name: Install Dependencies
-        run: pip install pyrogram tgcrypto
+CHAT_ID = int(os.getenv("CHAT_ID"))
 
-      - name: Run Encoder Script
-        env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          TASK_TYPE: ${{ github.event.inputs.task_type }}
-          VIDEO_ID: ${{ github.event.inputs.video_id }}
-          SUB_ID: ${{ github.event.inputs.sub_id }}
-          WM_ID: ${{ github.event.inputs.wm_id }}
-          WM_POS: ${{ github.event.inputs.wm_pos }}
-          CHAT_ID: ${{ github.event.inputs.chat_id }}
-          TARGET_RES: ${{ github.event.inputs.target_res }}
-          RENAME_TEXT: ${{ github.event.inputs.rename_text }}
-        run: python encoder.py
+TARGET_RES = os.getenv("TARGET_RES")
+
+RENAME_TEXT = os.getenv("RENAME_TEXT") or "output.mp4"
+
+# ================= CLIENT =================
+
+app = Client(
+    "worker",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN
+)
+
+# ================= DOWNLOAD =================
+
+async def download_file(file_id, filename):
+
+    print("Downloading:", filename)
+
+    path = await app.download_media(
+        file_id,
+        file_name=filename
+    )
+
+    return path
+
+# ================= RESIZE =================
+
+async def resize_video():
+
+    video_path = await download_file(
+        VIDEO_ID,
+        "input.mp4"
+    )
+
+    output = RENAME_TEXT
+
+    scale = f"scale=-2:{TARGET_RES}"
+
+    cmd = [
+
+        "ffmpeg",
+        "-y",
+
+        "-i", video_path,
+
+        "-vf", scale,
+
+        "-preset", "veryfast",
+
+        "-crf", "28",
+
+        "-c:a", "aac",
+
+        "-b:a", "96k",
+
+        output
+
+    ]
+
+    print("Running FFmpeg resize...")
+
+    subprocess.run(cmd, check=True)
+
+    return output
+
+# ================= HSUB =================
+
+async def hardsub_video():
+
+    video_path = await download_file(
+        VIDEO_ID,
+        "video.mp4"
+    )
+
+    sub_path = None
+
+    if SUB_ID:
+
+        sub_path = await download_file(
+            SUB_ID,
+            "sub.srt"
+        )
+
+    wm_path = None
+
+    if WM_ID:
+
+        wm_path = await download_file(
+            WM_ID,
+            "wm.png"
+        )
+
+    output = RENAME_TEXT
+
+    if wm_path:
+
+        pos = "10:10"
+
+        if WM_POS == "TR":
+            pos = "W-w-10:10"
+
+        filter_complex = (
+            f"[0:v]subtitles=sub.srt[v];"
+            f"[1:v]scale=120:-1[wm];"
+            f"[v][wm]overlay={pos}"
+        )
+
+        cmd = [
+
+            "ffmpeg",
+            "-y",
+
+            "-i", video_path,
+            "-i", wm_path,
+
+            "-filter_complex",
+            filter_complex,
+
+            "-preset", "veryfast",
+
+            "-crf", "26",
+
+            "-c:a", "aac",
+
+            "-b:a", "96k",
+
+            output
+
+        ]
+
+    else:
+
+        cmd = [
+
+            "ffmpeg",
+            "-y",
+
+            "-i", video_path,
+
+            "-vf", "subtitles=sub.srt",
+
+            "-preset", "veryfast",
+
+            "-crf", "26",
+
+            "-c:a", "aac",
+
+            "-b:a", "96k",
+
+            output
+
+        ]
+
+    print("Running FFmpeg hardsub...")
+
+    subprocess.run(cmd, check=True)
+
+    return output
+
+# ================= UPLOAD =================
+
+async def upload_result(file_path):
+
+    print("Uploading result...")
+
+    await app.send_document(
+
+        chat_id=CHAT_ID,
+
+        document=file_path,
+
+        caption=RENAME_TEXT
+
+    )
+
+# ================= MAIN =================
+
+async def main():
+
+    await app.start()
+
+    try:
+
+        if TASK_TYPE == "resize":
+
+            output = await resize_video()
+
+        else:
+
+            output = await hardsub_video()
+
+        await upload_result(output)
+
+        print("Task Completed!")
+
+    except Exception as e:
+
+        print("ERROR:", str(e))
+
+    finally:
+
+        await app.stop()
+
+asyncio.run(main())
