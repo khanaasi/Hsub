@@ -471,16 +471,9 @@ async def main():
     await idle()
 
 if __name__ == "__main__":
-
     threading.Thread(
-
-        target=lambda: HTTPServer(
-            ("0.0.0.0", PORT),
-            HealthHandler
-        ).serve_forever(),
-
+        target=lambda: HTTPServer(("0.0.0.0", PORT), HealthHandler).serve_forever(),
         daemon=True
-
     ).start()
 
     asyncio.run(main())
