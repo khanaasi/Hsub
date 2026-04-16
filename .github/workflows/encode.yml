@@ -1,109 +1,55 @@
-name: Encode Video
+name: Video Encoder Workflow
 
 on:
   workflow_dispatch:
     inputs:
       task_type:
-        description: 'hsub or resize'
+        description: 'Task type (hsub or resize)'
         required: true
       video_id:
-        description: 'Telegram file_id of video'
+        description: 'Telegram Video ID'
         required: true
       sub_id:
-        description: 'Telegram file_id of subtitle (optional)'
-        required: false
-      wm_id:
-        description: 'Watermark file_id'
-        required: false
-      wm_pos:
-        description: 'TL or TR'
-        required: false
-      target_res:
-        description: '1080 / 720 / 480'
-        required: false
-      chat_id:
-        description: 'Telegram chat id to send result'
+        description: 'Telegram Subtitle ID'
         required: true
-      rename_text:
-        description: 'Output file name'
-        required: false
-        default: 'output.mp4'
+      chat_id:
+        description: 'Telegram Chat ID'
+        required: true
+      resolution:
+        description: 'Target Resolution (if resize)'
+        required: true
 
 jobs:
-  encode:
+  encode_job:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Install FFmpeg
         run: |
-          sudo apt update
-          sudo apt install -y ffmpeg
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
-      - name: Install Pyrogram
+      - name: Install Dependencies
         run: pip install pyrogram tgcrypto
 
-      - name: Run Encoding Script
+      - name: Run Encoder Script
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          
           TASK_TYPE: ${{ github.event.inputs.task_type }}
           VIDEO_ID: ${{ github.event.inputs.video_id }}
           SUB_ID: ${{ github.event.inputs.sub_id }}
-          WM_ID: ${{ github.event.inputs.wm_id }}
-          WM_POS: ${{ github.event.inputs.wm_pos }}
-          TARGET_RES: ${{ github.event.inputs.target_res }}
           CHAT_ID: ${{ github.event.inputs.chat_id }}
-          RENAME_TEXT: ${{ github.event.inputs.rename_text }}
-        run: |
-          python -c "
-import os, asyncio, subprocess
-from pyrogram import Client
-
-API_ID = int(os.environ['API_ID'])
-API_HASH = os.environ['API_HASH']
-BOT_TOKEN = os.environ['BOT_TOKEN']
-TASK_TYPE = os.environ['TASK_TYPE']
-VIDEO_ID = os.environ['VIDEO_ID']
-SUB_ID = os.environ.get('SUB_ID', '')
-WM_ID = os.environ.get('WM_ID', '')
-WM_POS = os.environ.get('WM_POS', '')
-TARGET_RES = os.environ.get('TARGET_RES', '')
-CHAT_ID = int(os.environ['CHAT_ID'])
-RENAME_TEXT = os.environ.get('RENAME_TEXT', 'output.mp4')
-
-app = Client('worker', api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-async def run():
-    await app.start()
-    await app.send_message(CHAT_ID, '⚙️ GitHub: Encoding started...')
-    
-    vid = await app.download_media(VIDEO_ID, 'input.mp4')
-    out = RENAME_TEXT
-    
-    if TASK_TYPE == 'resize':
-        cmd = ['ffmpeg', '-y', '-i', vid, '-vf', f'scale=-2:{TARGET_RES}', '-preset', 'veryfast', '-crf', '28', '-c:a', 'aac', '-b:a', '96k', out]
-    else:
-        sub = await app.download_media(SUB_ID, 'sub.srt') if SUB_ID else None
-        if WM_ID:
-            wm = await app.download_media(WM_ID, 'wm.png')
-            pos = '20:20' if WM_POS == 'TL' else 'W-w-20:20'
-            cmd = ['ffmpeg', '-y', '-i', vid, '-i', wm, '-filter_complex', f'[0:v]subtitles={sub}[v];[1:v]scale=200:-1[wm];[v][wm]overlay={pos}', '-preset', 'veryfast', '-crf', '28', '-c:a', 'aac', '-b:a', '96k', out]
-        else:
-            cmd = ['ffmpeg', '-y', '-i', vid, '-vf', f'subtitles={sub}', '-preset', 'veryfast', '-crf', '28', '-c:a', 'aac', '-b:a', '96k', out]
-    
-    subprocess.run(cmd, check=True)
-    await app.send_document(CHAT_ID, out, caption=RENAME_TEXT)
-    await app.send_message(CHAT_ID, '✅ Encoding completed!')
-    await app.stop()
-
-asyncio.run(run())
-          "
+          RESOLUTION: ${{ github.event.inputs.resolution }}
+        run: python encoder.py
