@@ -1,4 +1,5 @@
 import os
+import time
 import asyncio
 import pyrogram.utils
 
@@ -24,24 +25,48 @@ SUB_ID = os.getenv("SUB_ID")
 CHAT_ID = int(os.getenv("CHAT_ID"))
 RESO = os.getenv("RESOLUTION")
 
-app = Client("encoder", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Pyrogram client ko thoda stable banaya
+app = Client("encoder", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, max_concurrent_transmissions=3)
+
+# Progress Bar Tracker
+last_edit_time = 0
+
+async def progress_bar(current, total, status_msg, action_text):
+    global last_edit_time
+    now = time.time()
+    
+    # Har 5 second me Telegram message update karo
+    if now - last_edit_time > 5 or current == total:
+        try:
+            percent = (current / total) * 100
+            curr_mb = current / (1024 * 1024)
+            tot_mb = total / (1024 * 1024)
+            await status_msg.edit(f"⚙️ Worker: {action_text}\n⏳ `{percent:.1f}%` ({curr_mb:.1f}MB / {tot_mb:.1f}MB)")
+            last_edit_time = now
+        except:
+            pass
 
 async def main():
     await app.start()
-    
-    # Ab yeh line bina kisi error ke tumhare group me message bhej degi!
-    status_msg = await app.send_message(CHAT_ID, "⚙️ Worker Started: 📥 Downloading Video...")
+    status_msg = await app.send_message(CHAT_ID, "⚙️ Worker Started: Preparing...")
     
     try:
-        video_path = await app.download_media(VIDEO_ID)
+        # Download Video
+        video_path = await app.download_media(
+            VIDEO_ID, 
+            progress=progress_bar, 
+            progress_args=(status_msg, "📥 Downloading Video...")
+        )
         output = "output.mp4"
         
         cmd = ["ffmpeg", "-y", "-i", video_path]
 
         if TASK_TYPE == "hsub":
-            await status_msg.edit("⚙️ Worker: 📥 Downloading Subtitle...")
-            
-            sub_path = await app.download_media(SUB_ID)
+            sub_path = await app.download_media(
+                SUB_ID, 
+                progress=progress_bar, 
+                progress_args=(status_msg, "📥 Downloading Subtitle...")
+            )
             abs_sub = os.path.abspath(sub_path).replace('\\', '/')
             
             cmd.extend([
@@ -58,7 +83,7 @@ async def main():
                 "-c:a", "aac", "-b:a", "96k", output
             ])
 
-        await status_msg.edit("🔥 Worker: Encoding Started... (It may take a few minutes)")
+        await status_msg.edit("🔥 Worker: Encoding Started... (Please wait)")
         
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -68,12 +93,27 @@ async def main():
         
         stdout, stderr = await process.communicate()
 
+        # Encoding successful ya nahi?
         if process.returncode == 0 and os.path.exists(output) and os.path.getsize(output) > 0:
-            await status_msg.edit("📤 Worker: Uploading Result to Telegram...")
             caption = "✅ Hardsubbed by GitHub" if TASK_TYPE == "hsub" else f"✅ Resized to {RESO}p by GitHub"
             
-            await app.send_document(CHAT_ID, document=output, caption=caption)
-            await status_msg.delete()
+            await status_msg.edit("📤 Worker: Starting Upload...")
+            print("Upload process started...")
+
+            try:
+                # Direct file path bhej rahe hain taaki issue na aaye
+                await app.send_document(
+                    chat_id=CHAT_ID, 
+                    document=output, 
+                    caption=caption,
+                    progress=progress_bar,
+                    progress_args=(status_msg, "📤 Uploading Video...")
+                )
+                await status_msg.delete()
+                print("Upload Success!")
+            except Exception as upload_err:
+                await status_msg.edit(f"❌ **Upload Failed:**\n`{str(upload_err)}`")
+
         else:
             error_text = stderr.decode()[-800:]  
             await status_msg.edit(f"❌ **FFmpeg Error:**\n`{error_text}`")
