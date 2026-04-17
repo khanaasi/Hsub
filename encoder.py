@@ -27,9 +27,7 @@ WM_ID = os.getenv("WM_ID")
 WM_POS = os.getenv("WM_POS")
 RENAME = os.getenv("RENAME")
 
-# FIX: Removed max_concurrent_transmissions. 
-# Ek hi stream me upload hoga jisse Telegram block/freeze nahi karega.
-app = Client("encoder", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, max_concurrent_transmissions=1)
+app = Client("encoder", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 last_edit_time = 0
 
@@ -87,42 +85,18 @@ async def main():
         stdout, stderr = await process.communicate()
 
         if process.returncode == 0 and os.path.exists(output) and os.path.getsize(output) > 0:
-            await status_msg.edit("📤 Worker: Connection secure, Starting Upload...")
+            await status_msg.edit("📤 Worker: Network Secure, Starting Upload...")
             await asyncio.sleep(2)
             caption = f"✅ Completed: {output}"
             
-            # 🔥 NEW UPLOAD PROTECTION LOGIC 🔥
-            upload_success = False
-            for attempt in range(3): # Agar hang hua toh 3 baar try karega
-                try:
-                    await status_msg.edit(f"📤 Worker: Uploading Video... (Attempt {attempt+1}/3)")
-                    # Timeout of 15 minutes lagaya hai. Agar 15 min me nahi hua ya atk gaya, toh reset karke fir start karega.
-                    await asyncio.wait_for(
-                        app.send_document(
-                            CHAT_ID, 
-                            document=output, 
-                            caption=caption,
-                            progress=progress_bar,
-                            progress_args=(status_msg, f"📤 Uploading (Attempt {attempt+1}/3)...")
-                        ),
-                        timeout=900 
-                    )
-                    upload_success = True
-                    await status_msg.delete()
-                    break # Success par loop khatam
-                except asyncio.TimeoutError:
-                    await status_msg.edit(f"⚠️ Telegram Server Frozen! Auto-Retrying... ({attempt+1}/3)")
-                    await asyncio.sleep(5)
-                except Exception as e:
-                    if "FloodWait" in str(e):
-                        await asyncio.sleep(10)
-                    else:
-                        await status_msg.edit(f"⚠️ Upload Error: {e}")
-                        await asyncio.sleep(5)
-            
-            if not upload_success:
-                await app.send_message(CHAT_ID, "❌ **Upload Failed permanently due to Telegram Server restrictions.**")
-                
+            await app.send_document(
+                CHAT_ID, 
+                document=output, 
+                caption=caption,
+                progress=progress_bar,
+                progress_args=(status_msg, "📤 Uploading Video...")
+            )
+            await status_msg.delete()
         else:
             error_text = stderr.decode()[-800:]  
             await status_msg.edit(f"❌ **FFmpeg Error:**\n`{error_text}`")
