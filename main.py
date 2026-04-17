@@ -37,11 +37,15 @@ def _send_to_github(task):
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json"
     }
-    payload = {"ref": "main", "inputs": task} # change to 'master' if needed
+    payload = {"ref": "main", "inputs": task} # branch name "main" ya "master"
     try:
         r = requests.post(url, headers=headers, json=payload)
-        return r.status_code == 204
-    except: return False
+        if r.status_code == 204:
+            return True, "Success"
+        else:
+            return False, f"Code {r.status_code}: {r.text}"
+    except Exception as e:
+        return False, str(e)
 
 async def trigger_github(task):
     return await asyncio.to_thread(_send_to_github, task)
@@ -57,7 +61,7 @@ async def cancel_task(client, message: Message):
     uid = message.from_user.id
     if uid in users_data:
         del users_data[uid]
-        await message.reply("🛑 Task memory cleared. (Note: Running tasks on GitHub cannot be stopped).")
+        await message.reply("🛑 Task memory cleared.")
     else:
         await message.reply("❌ No active setup process.")
 
@@ -70,8 +74,12 @@ async def resize_command(client, message: Message):
 
     status = await message.reply(f"⏳ Sending {target}p Task to GitHub...")
     task = {"task_type": "resize", "video_id": media.file_id, "sub_id": "none", "wm_id": "none", "wm_pos": "none", "rename": f"resized_{target}p.mp4", "chat_id": str(message.chat.id), "resolution": target}
-    if await trigger_github(task): await status.edit(f"✅ **Sent to GitHub!**")
-    else: await status.edit("❌ **Trigger Failed!**")
+    
+    success, err_msg = await trigger_github(task)
+    if success: 
+        await status.edit(f"✅ **Sent to GitHub!**")
+    else: 
+        await status.edit(f"❌ **Trigger Failed!**\n`{err_msg}`")
 
 @app.on_message(filters.command("hsub"))
 async def hsub_cmd(client, message: Message):
@@ -141,9 +149,12 @@ async def send_to_queue(uid, msg):
         "chat_id": d["chat_id"],
         "resolution": "none"
     }
-    await msg.reply("⏳ Sending Task to GitHub...")
-    if await trigger_github(task): await msg.reply("✅ **Sent to GitHub! Process started.**")
-    else: await msg.reply("❌ **Trigger Failed!**")
+    status = await msg.reply("⏳ Sending Task to GitHub...")
+    success, err_msg = await trigger_github(task)
+    if success: 
+        await status.edit("✅ **Sent to GitHub! Process started.**")
+    else: 
+        await status.edit(f"❌ **Trigger Failed!**\nGitHub said: `{err_msg}`")
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
