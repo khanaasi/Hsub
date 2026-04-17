@@ -27,7 +27,8 @@ WM_ID = os.getenv("WM_ID")
 WM_POS = os.getenv("WM_POS")
 RENAME = os.getenv("RENAME")
 
-app = Client("encoder", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# max_concurrent_transmissions=1 zaruri hai taaki spam bankar upload na ruke
+app = Client("encoder", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, max_concurrent_transmissions=1)
 
 last_edit_time = 0
 
@@ -88,18 +89,43 @@ async def main():
 
         if process.returncode == 0 and os.path.exists(output) and os.path.getsize(output) > 0:
             
-            await status_msg.edit("🔌 Reconnecting to Telegram Server...")
-            try:
-                await app.restart() 
-            except:
-                pass
-            await asyncio.sleep(2)
-            
             caption = f"✅ Completed: {output}"
-            await safe_edit_message(status_msg, "📤 Worker: Upload Connection Secure, Starting...")
             
-            await app.send_document(CHAT_ID, document=output, caption=caption, progress=progress_bar, progress_args=(status_msg, "📤 Uploading Video..."))
-            await status_msg.delete()
+            # 🔥 THE MASTER UPLOAD TIMEOUT FIX 🔥
+            uploaded = False
+            for attempt in range(3):
+                try:
+                    await status_msg.edit(f"🔌 Reconnecting & Uploading (Attempt {attempt+1}/3)...")
+                    await asyncio.sleep(2)
+                    
+                    # Agar 15 minute me upload complete nahi hua (atak gaya), toh automatically cancel karke retry karega
+                    await asyncio.wait_for(
+                        app.send_document(
+                            CHAT_ID, 
+                            document=output, 
+                            caption=caption,
+                            progress=progress_bar,
+                            progress_args=(status_msg, f"📤 Uploading Video ({attempt+1}/3)...")
+                        ),
+                        timeout=900 
+                    )
+                    uploaded = True
+                    await status_msg.delete()
+                    break
+                except asyncio.TimeoutError:
+                    await status_msg.edit(f"⚠️ Telegram Server Frozen! Auto-Retrying... ({attempt+1}/3)")
+                    try:
+                        await app.restart() # Purana network connection kaat ke naya lagayega
+                    except:
+                        pass
+                    await asyncio.sleep(5)
+                except Exception as upload_err:
+                    await status_msg.edit(f"⚠️ Upload Error: {upload_err}. Retrying...")
+                    await asyncio.sleep(5)
+            
+            if not uploaded:
+                await status_msg.edit("❌ **Upload permanently failed due to Telegram Server issue.**")
+
         else:
             error_text = stderr.decode()[-800:]  
             await status_msg.edit(f"❌ **FFmpeg Error:**\n`{error_text}`")
