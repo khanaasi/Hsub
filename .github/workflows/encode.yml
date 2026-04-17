@@ -23,18 +23,11 @@ on:
 jobs:
   encode_job:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      # 🔥 YAHAN GITHUB KA INTERNET FIX HOGA TAALI UPLOAD KABHI NA ATKE 🔥
-      - name: Fix GitHub Network for Telegram Upload (CRITICAL)
-        run: |
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-          sudo ip link set dev eth0 mtu 1360
 
       - name: Install FFmpeg
         run: |
@@ -47,7 +40,8 @@ jobs:
           python-version: "3.10"
 
       - name: Install Dependencies
-        run: pip install pyrogram tgcrypto
+        # Tgcrypto hata diya gaya hai taaki upload hang na ho
+        run: pip install pyrogram
 
       - name: Run Encoder Script
         env:
