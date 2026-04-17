@@ -1,4 +1,4 @@
-Entername: Video Encoder Workflow
+name: Video Encoder Workflow
 
 on:
   workflow_dispatch:
@@ -40,7 +40,6 @@ jobs:
           python-version: "3.10"
 
       - name: Install Dependencies
-        # 🔥 FIX: Tgcrypto wapas lagaya hai, ab video bina corrupt hue fast download hogi!
         run: pip install pyrogram tgcrypto
 
       - name: Run Encoder Script
