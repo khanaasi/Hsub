@@ -1,4 +1,4 @@
-name: Video Encoder Workflow
+Entername: Video Encoder Workflow
 
 on:
   workflow_dispatch:
@@ -28,6 +28,13 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      # 🔥 YAHAN GITHUB KA INTERNET FIX HOGA TAAKI 0.5MB PAR NA ATKE 🔥
+      - name: Fix GitHub Network (CRITICAL)
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo ip link set dev eth0 mtu 1360
 
       - name: Install FFmpeg
         run: |
