@@ -1,4 +1,4 @@
-import os
+hereimport os
 import time
 import asyncio
 import pyrogram.utils
@@ -41,9 +41,9 @@ async def progress_bar(current, total, status_msg, action_text):
     global last_edit_time
     now = time.time()
     if now - last_edit_time > 8 or current == total:
-        percent = (current / total) * 100
+        percent = (current / total) * 100 if total > 0 else 0
         curr_mb = current / (1024 * 1024)
-        tot_mb = total / (1024 * 1024)
+        tot_mb = total / (1024 * 1024) if total > 0 else 0
         text = f"⚙️ Worker: {action_text}\n⏳ `{percent:.1f}%` ({curr_mb:.1f}MB / {tot_mb:.1f}MB)"
         asyncio.create_task(safe_edit_message(status_msg, text))
         last_edit_time = now
@@ -53,10 +53,14 @@ async def main():
     status_msg = await app.send_message(CHAT_ID, "⚙️ Worker Started: Preparing...")
     
     try:
-        # 🔥 FIX: Force downloaded file to be EXACTLY "video.mp4" so it never downloads as .zip!
         video_path = await app.download_media(VIDEO_ID, file_name="video.mp4", progress=progress_bar, progress_args=(status_msg, "📥 Downloading Video..."))
-        output = RENAME if RENAME != "none" else "output.mp4"
         
+        # 🔥 Security Check: Agar video proper download nahi hui toh error dega
+        if not video_path or not os.path.exists(video_path) or os.path.getsize(video_path) < 1024 * 1024:
+            await status_msg.edit("❌ **Error:** Video download fail ho gayi thi, Please dobara file bhejo.")
+            return
+
+        output = RENAME if RENAME != "none" else "output.mp4"
         cmd = []
 
         if TASK_TYPE == "hsub":
@@ -64,7 +68,6 @@ async def main():
             abs_sub = os.path.abspath(sub_path).replace('\\', '/')
             
             if WM_ID != "none":
-                # 🔥 FIX: Force watermark to be "wm.png"
                 wm_path = await app.download_media(WM_ID, file_name="wm.png", progress=progress_bar, progress_args=(status_msg, "📥 Downloading Watermark..."))
                 overlay_pos = "20:20" if WM_POS == "TL" else "W-w-20:20"
                 filter_complex = f"[0:v]subtitles='{abs_sub}':charenc=UTF-8[sub];[1:v]scale=200:-1[wm];[sub][wm]overlay={overlay_pos}"
@@ -72,18 +75,12 @@ async def main():
             else:
                 cmd = ["ffmpeg", "-y", "-i", video_path, "-vf", f"subtitles='{abs_sub}':charenc=UTF-8"]
             
-            cmd.extend([
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-tune", "fastdecode",
-                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", output
-            ])
+            cmd.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-tune", "fastdecode", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", output])
             
         elif TASK_TYPE == "resize":
             await status_msg.edit(f"⚙️ Worker: Applying {RESO}p Resize...")
             cmd = ["ffmpeg", "-y", "-i", video_path, "-vf", f"scale=-2:{RESO}"]
-            cmd.extend([
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "34",
-                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", output
-            ])
+            cmd.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", output])
 
         await status_msg.edit("🔥 Worker: Encoding & Compressing... (Please wait)")
         
@@ -92,7 +89,7 @@ async def main():
 
         if process.returncode == 0 and os.path.exists(output) and os.path.getsize(output) > 0:
             
-            # 🔥 FIX: Reset connection just before uploading to avoid frozen connection
+            # 🔥 THE MASTER UPLOAD FIX: Reconnection jisse upload 0.5mb pe atake na
             await status_msg.edit("🔌 Reconnecting to Telegram Server...")
             try:
                 await app.restart() 
@@ -103,13 +100,7 @@ async def main():
             caption = f"✅ Completed: {output}"
             await safe_edit_message(status_msg, "📤 Worker: Upload Connection Secure, Starting...")
             
-            await app.send_document(
-                CHAT_ID, 
-                document=output, 
-                caption=caption,
-                progress=progress_bar,
-                progress_args=(status_msg, "📤 Uploading Video...")
-            )
+            await app.send_document(CHAT_ID, document=output, caption=caption, progress=progress_bar, progress_args=(status_msg, "📤 Uploading Video..."))
             await status_msg.delete()
         else:
             error_text = stderr.decode()[-800:]  
