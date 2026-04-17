@@ -1,4 +1,4 @@
-hereimport os
+import os
 import time
 import asyncio
 import pyrogram.utils
@@ -55,7 +55,6 @@ async def main():
     try:
         video_path = await app.download_media(VIDEO_ID, file_name="video.mp4", progress=progress_bar, progress_args=(status_msg, "📥 Downloading Video..."))
         
-        # 🔥 Security Check: Agar video proper download nahi hui toh error dega
         if not video_path or not os.path.exists(video_path) or os.path.getsize(video_path) < 1024 * 1024:
             await status_msg.edit("❌ **Error:** Video download fail ho gayi thi, Please dobara file bhejo.")
             return
@@ -89,7 +88,6 @@ async def main():
 
         if process.returncode == 0 and os.path.exists(output) and os.path.getsize(output) > 0:
             
-            # 🔥 THE MASTER UPLOAD FIX: Reconnection jisse upload 0.5mb pe atake na
             await status_msg.edit("🔌 Reconnecting to Telegram Server...")
             try:
                 await app.restart() 
