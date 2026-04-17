@@ -27,49 +27,42 @@ WM_ID = os.getenv("WM_ID")
 WM_POS = os.getenv("WM_POS")
 RENAME = os.getenv("RENAME")
 
-# 🔥 FIX 1: IPv6 band kiya taaki Telegram server reject na kare
-app = Client("encoder", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, ipv6=False)
+app = Client("encoder", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 last_edit_time = 0
 
-async def safe_edit_message(status_msg, text):
-    try:
-        await status_msg.edit(text)
-    except:
-        pass
-
-async def progress_bar_download(current, total, status_msg, action_text):
+async def progress_bar(current, total, msg_id, action_text):
     global last_edit_time
     now = time.time()
-    # Download me edit safe hota hai, isliye yahan progress bar rakha hai
-    if now - last_edit_time > 8 or current == total:
-        percent = (current / total) * 100 if total > 0 else 0
-        curr_mb = current / (1024 * 1024)
-        tot_mb = total / (1024 * 1024) if total > 0 else 0
-        text = f"⚙️ Worker: {action_text}\n⏳ `{percent:.1f}%` ({curr_mb:.1f}MB / {tot_mb:.1f}MB)"
-        asyncio.create_task(safe_edit_message(status_msg, text))
-        last_edit_time = now
+    # 10 second delay for safe updating
+    if now - last_edit_time > 10 or current == total:
+        try:
+            percent = (current / total) * 100 if total > 0 else 0
+            curr_mb = current / (1024 * 1024)
+            tot_mb = total / (1024 * 1024) if total > 0 else 0
+            text = f"⚙️ Worker: {action_text}\n⏳ `{percent:.1f}%` ({curr_mb:.1f}MB / {tot_mb:.1f}MB)"
+            await app.edit_message_text(chat_id=CHAT_ID, message_id=msg_id, text=text)
+            last_edit_time = now
+        except:
+            pass
 
 async def main():
     await app.start()
     status_msg = await app.send_message(CHAT_ID, "⚙️ Worker Started: Preparing...")
+    msg_id = status_msg.id
     
     try:
-        video_path = await app.download_media(VIDEO_ID, file_name="video.mp4", progress=progress_bar_download, progress_args=(status_msg, "📥 Downloading Video..."))
-        
-        if not video_path or not os.path.exists(video_path) or os.path.getsize(video_path) < 1024 * 1024:
-            await status_msg.edit("❌ **Error:** Video download fail ho gayi thi, Please dobara file bhejo.")
-            return
-
+        # 1. DOWNLOAD MEDIA
+        video_path = await app.download_media(VIDEO_ID, file_name="video.mp4", progress=progress_bar, progress_args=(msg_id, "📥 Downloading Video..."))
         output = RENAME if RENAME != "none" else "output.mp4"
         cmd = []
 
         if TASK_TYPE == "hsub":
-            sub_path = await app.download_media(SUB_ID, progress=progress_bar_download, progress_args=(status_msg, "📥 Downloading Subtitle..."))
+            sub_path = await app.download_media(SUB_ID, progress=progress_bar, progress_args=(msg_id, "📥 Downloading Subtitle..."))
             abs_sub = os.path.abspath(sub_path).replace('\\', '/')
             
             if WM_ID != "none":
-                wm_path = await app.download_media(WM_ID, file_name="wm.png", progress=progress_bar_download, progress_args=(status_msg, "📥 Downloading Watermark..."))
+                wm_path = await app.download_media(WM_ID, file_name="wm.png", progress=progress_bar, progress_args=(msg_id, "📥 Downloading Watermark..."))
                 overlay_pos = "20:20" if WM_POS == "TL" else "W-w-20:20"
                 filter_complex = f"[0:v]subtitles='{abs_sub}':charenc=UTF-8[sub];[1:v]scale=200:-1[wm];[sub][wm]overlay={overlay_pos}"
                 cmd = ["ffmpeg", "-y", "-i", video_path, "-i", wm_path, "-filter_complex", filter_complex]
@@ -79,42 +72,42 @@ async def main():
             cmd.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-tune", "fastdecode", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", output])
             
         elif TASK_TYPE == "resize":
-            await status_msg.edit(f"⚙️ Worker: Applying {RESO}p Resize...")
-            cmd = ["ffmpeg", "-y", "-i", video_path, "-vf", f"scale=-2:{RESO}"]
-            cmd.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", output])
+            cmd = ["ffmpeg", "-y", "-i", video_path, "-vf", f"scale=-2:{RESO}", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", output]
 
-        await status_msg.edit("🔥 Worker: Encoding & Compressing... (Please wait 10-15 mins)")
-        
+        # 🔥 THE MASTER FIX: DISCONNECT BEFORE ENCODING 🔥
+        await app.edit_message_text(CHAT_ID, msg_id, "🔥 Worker: Encoding...\n*(Bot is disconnecting safely to prevent timeout bug. Please wait 10-20 mins!)*")
+        await app.stop() # Connection band taaki freeze na ho
+
+        # 2. ENCODE (Runs while offline from Telegram)
         process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await process.communicate()
 
-        if process.returncode == 0 and os.path.exists(output) and os.path.getsize(output) > 0:
-            
-            # 🔥 THE MASTER UPLOAD FIX 🔥
-            # Message ab update nahi hoga upload ke waqt, taaki connection takraye nahi!
-            await status_msg.edit("📤 Worker: **Uploading Video...**\n*(Live tracking is disabled to prevent Telegram Server Freeze. Please wait 2-5 minutes...)*")
-            
-            try:
-                caption = f"✅ Completed: {output}"
-                
-                # Bina progress bar ke seedha upload hoga
-                await app.send_document(
-                    CHAT_ID, 
-                    document=output, 
-                    caption=caption
-                )
-                await status_msg.delete()
-            except Exception as upload_err:
-                await status_msg.edit(f"⚠️ Upload Error: {upload_err}")
+        # 🔥 RECONNECT: START A FRESH, NEW CONNECTION 🔥
+        await app.start() 
 
+        # 3. UPLOAD MEDIA
+        if process.returncode == 0 and os.path.exists(output) and os.path.getsize(output) > 0:
+            await app.edit_message_text(CHAT_ID, msg_id, "📤 Encoding Done! Starting Secure Upload...")
+            
+            await app.send_document(
+                CHAT_ID, 
+                document=output, 
+                caption=f"✅ Completed: {output}",
+                progress=progress_bar, 
+                progress_args=(msg_id, "📤 Uploading Video...")
+            )
+            await app.delete_messages(CHAT_ID, msg_id)
         else:
             error_text = stderr.decode()[-800:]  
-            await status_msg.edit(f"❌ **FFmpeg Error:**\n`{error_text}`")
+            await app.edit_message_text(CHAT_ID, msg_id, f"❌ **FFmpeg Error:**\n`{error_text}`")
 
     except Exception as e:
-        await status_msg.edit(f"❌ **Script Error:**\n`{str(e)}`")
+        if not app.is_connected:
+            await app.start()
+        await app.edit_message_text(CHAT_ID, msg_id, f"❌ **Script Error:**\n`{str(e)}`")
 
     finally:
-        await app.stop()
+        if app.is_connected:
+            await app.stop()
 
 asyncio.run(main())
