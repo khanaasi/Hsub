@@ -23,17 +23,11 @@ on:
 jobs:
   encode_job:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Fix GitHub Network (CRITICAL)
-        run: |
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-          sudo ip link set dev eth0 mtu 1360
 
       - name: Install FFmpeg
         run: |
