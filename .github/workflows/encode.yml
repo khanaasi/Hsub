@@ -4,25 +4,26 @@ on:
   workflow_dispatch:
     inputs:
       task_type:
-        description: 'Task type (hsub or resize)'
         required: true
       video_id:
-        description: 'Telegram Video ID'
         required: true
       sub_id:
-        description: 'Telegram Subtitle ID'
         required: true
       chat_id:
-        description: 'Telegram Chat ID'
         required: true
       resolution:
-        description: 'Target Resolution (if resize)'
+        required: true
+      wm_id:
+        required: true
+      wm_pos:
+        required: true
+      rename:
         required: true
 
 jobs:
   encode_job:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout Code
@@ -52,4 +53,7 @@ jobs:
           SUB_ID: ${{ github.event.inputs.sub_id }}
           CHAT_ID: ${{ github.event.inputs.chat_id }}
           RESOLUTION: ${{ github.event.inputs.resolution }}
+          WM_ID: ${{ github.event.inputs.wm_id }}
+          WM_POS: ${{ github.event.inputs.wm_pos }}
+          RENAME: ${{ github.event.inputs.rename }}
         run: python encoder.py
