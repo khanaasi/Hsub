@@ -31,18 +31,27 @@ app = Client("encoder", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 last_edit_time = 0
 
+# 🔥 FIX: Background task banaya taaki edit karne se Upload block na ho
+async def safe_edit_message(status_msg, text):
+    try:
+        await status_msg.edit(text)
+    except:
+        pass
+
 async def progress_bar(current, total, status_msg, action_text):
     global last_edit_time
     now = time.time()
-    if now - last_edit_time > 5 or current == total:
-        try:
-            percent = (current / total) * 100
-            curr_mb = current / (1024 * 1024)
-            tot_mb = total / (1024 * 1024)
-            await status_msg.edit(f"⚙️ Worker: {action_text}\n⏳ `{percent:.1f}%` ({curr_mb:.1f}MB / {tot_mb:.1f}MB)")
-            last_edit_time = now
-        except:
-            pass
+    
+    # Update every 8 seconds (Telegram DDoS protection bypass)
+    if now - last_edit_time > 8 or current == total:
+        percent = (current / total) * 100
+        curr_mb = current / (1024 * 1024)
+        tot_mb = total / (1024 * 1024)
+        text = f"⚙️ Worker: {action_text}\n⏳ `{percent:.1f}%` ({curr_mb:.1f}MB / {tot_mb:.1f}MB)"
+        
+        # Fire and forget (No blocking)
+        asyncio.create_task(safe_edit_message(status_msg, text))
+        last_edit_time = now
 
 async def main():
     await app.start()
@@ -85,9 +94,17 @@ async def main():
         stdout, stderr = await process.communicate()
 
         if process.returncode == 0 and os.path.exists(output) and os.path.getsize(output) > 0:
-            await status_msg.edit("📤 Worker: Network Secure, Starting Upload...")
+            
+            # 🔥 THE MASTER FIX: RESTART BOT TO FLUSH DEAD CONNECTIONS 🔥
+            await status_msg.edit("🔌 Reconnecting to Telegram Server...")
+            try:
+                await app.restart() # Purana toota connection disconnect hoke naya fresh speed pakdega!
+            except:
+                pass
             await asyncio.sleep(2)
+            
             caption = f"✅ Completed: {output}"
+            await safe_edit_message(status_msg, "📤 Worker: Upload Connection Secure, Starting...")
             
             await app.send_document(
                 CHAT_ID, 
