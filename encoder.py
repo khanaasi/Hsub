@@ -34,6 +34,7 @@ last_edit_time = 0
 async def progress_bar(current, total, app, msg_id, action_text):
     global last_edit_time
     now = time.time()
+    # 10 seconds delay prevents Telegram flood waits and keeps upload/download fast
     if now - last_edit_time > 10 or current == total:
         try:
             percent = (current / total) * 100 if total > 0 else 0
@@ -46,10 +47,11 @@ async def progress_bar(current, total, app, msg_id, action_text):
 
 # ================= STAGE 1: DOWNLOAD =================
 async def download_phase():
+    # Make sure you have TgCrypto installed for maximum download/upload speed
     app = Client("worker_down", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
     await app.start()
     
-    status_msg = await app.send_message(CHAT_ID, "⚙️ Worker Started: Preparing Download...")
+    status_msg = await app.send_message(CHAT_ID, "⚡ Worker Started: Fast Download...")
     msg_id = status_msg.id
     
     try:
@@ -61,8 +63,8 @@ async def download_phase():
             if WM_ID != "none":
                 wm_path = await app.download_media(WM_ID, file_name="wm.png", progress=progress_bar, progress_args=(app, msg_id, "📥 Downloading Watermark..."))
                 
-        await app.edit_message_text(CHAT_ID, msg_id, "🔥 Worker: Encoding...\n*(Bot goes offline during encoding to prevent Telegram Freeze bug. Wait 10-15 mins!)*")
-        await app.stop() # Disconnect completely
+        await app.edit_message_text(CHAT_ID, msg_id, "🔥 Worker: Superfast Encoding...\n*(Bot goes offline during encoding to maximize CPU usage. Wait slightly!)*")
+        await app.stop() # Disconnect completely to save RAM
         return video_path, sub_path, wm_path, msg_id
     except Exception as e:
         await app.edit_message_text(CHAT_ID, msg_id, f"❌ Download Error: {e}")
@@ -82,10 +84,12 @@ def encode_phase(video_path, sub_path, wm_path):
         else:
             cmd = ["ffmpeg", "-y", "-i", video_path, "-vf", f"subtitles='{abs_sub}':charenc=UTF-8"]
         
-        cmd.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-tune", "fastdecode", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", output])
+        # Added -threads 0 and -c:a copy for max GitHub CPU speed
+        cmd.extend(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-threads", "0", "-tune", "fastdecode", "-pix_fmt", "yuv420p", "-c:a", "copy", output])
         
     elif TASK_TYPE == "resize":
-        cmd = ["ffmpeg", "-y", "-i", video_path, "-vf", f"scale=-2:{RESO}", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", output]
+        # Added -threads 0 and -c:a copy for max GitHub CPU speed
+        cmd = ["ffmpeg", "-y", "-i", video_path, "-vf", f"scale=-2:{RESO}", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "34", "-threads", "0", "-pix_fmt", "yuv420p", "-c:a", "copy", output]
         
     # Blocking execution (No asyncio crash)
     process = subprocess.run(cmd, capture_output=True, text=True)
@@ -99,7 +103,7 @@ async def upload_phase(output, returncode, stderr, msg_id):
     
     try:
         if returncode == 0 and os.path.exists(output) and os.path.getsize(output) > 0:
-            await app.edit_message_text(CHAT_ID, msg_id, "📤 Encoding Done! Starting Fresh Upload...")
+            await app.edit_message_text(CHAT_ID, msg_id, "📤 Encoding Done! Starting Fast Upload...")
             await app.send_document(CHAT_ID, document=output, caption=f"✅ Completed: {output}", progress=progress_bar, progress_args=(app, msg_id, "📤 Uploading Video..."))
             await app.delete_messages(CHAT_ID, msg_id)
         else:
