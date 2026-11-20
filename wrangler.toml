@@ -1,0 +1,11 @@
+name = "ping-manager"   # dashboard me jo Worker ka naam hai bilkul wahi likhna
+main = "worker.js"
+compatibility_date = "2025-06-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pings"
+database_id = "YAHAN-D1-DATABASE-ID-PASTE-KARO"
