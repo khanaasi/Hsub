@@ -8,4 +8,4 @@ crons = ["*/5 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "pings"
-database_id = "YAHAN-D1-DATABASE-ID-PASTE-KARO"
+database_id = "04e500e9-ca2c-4924-ad52-7709917ba673"
